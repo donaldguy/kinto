@@ -259,7 +259,7 @@ GroupAdd, intellij, ahk_exe idea64.exe
                 Return
             }
         ; Send Enter to open things while using Cmd+Down in a Control Panel window
-        If ContainsAny(fc, "DirectUIHWND3") {
+        If ContainsAny(fc, "DirectUIHWND3", "SysListView321") {
             Send {Enter}
             Return
         }
