@@ -220,12 +220,26 @@ GroupAdd, intellij, ahk_exe idea64.exe
 ; +F8::Send {LCtrl down}{LWin down}{left}{LCtrl up}{LWin up}  ; Comment out on host machine
 ; +F6::Send {LCtrl down}{LWin down}{right}{LCtrl up}{LWin up} ; Comment out on host machine
 
+
 ; #########################################################################
 ; #############   START OF FINDER MODS FOR FILE MANAGERS   ################
 ; #########################################################################
 ; Finder Mods for Windows File Explorer (explore.exe)
-#IfWinActive ahk_class CabinetWClass ahk_exe explorer.exe
-    ^i::Send !{Enter}           ; Cmd+i: Get Info / Properties
+#If WinActive("ahk_class CabinetWClass ahk_exe explorer.exe") or WinActive("ahk_class Progman ahk_exe explorer.exe")
+
+
+    ; Utility function to handle comparing the window class (first argument) to multiple possible strings
+    ContainsAny(fc, options*) {  ; The asterisk allows passing multiple arguments
+        for index, value in options
+            if InStr(fc, value)
+                return true
+        return false
+    }
+
+
+    ^+[::Send ^+{Tab}           ; Tab nav: Go to prior tab (left)
+    ^+]::Send ^{Tab}            ; Tab nav: Go to next tab (right)
+    ^i::Send !{Enter}           ; Cmd+I: Get Info / Properties
     ^r::Send {F5}               ; Cmd+R: Refresh view (Not actually a Finder shortcut? But works in Linux file browsers too.)
     ^1::Send ^+2                ; Cmd+1: View as Icons
     ^2::Send ^+6                ; Cmd+2: View as List (Detailed)
@@ -234,7 +248,8 @@ GroupAdd, intellij, ahk_exe idea64.exe
     ^Up::Send !{Up}             ; Cmd+Up: Up to parent folder
     ^Left::Send !{Left}         ; Cmd+Left: Go to prior location in history
     ^Right::Send !{Right}       ; Cmd+Right: Go to next location in history
-    ^Down::                     ; Cmd-Down: Navigate into the selected directory
+
+    ^Down::                     ; Cmd-Down: Navigate into the selected directory (has some odd behavior without the conditional)
     For window in ComObjCreate("Shell.Application").Windows
         If WinActive() = window.hwnd
             For item in window.document.SelectedItems {
@@ -242,34 +257,49 @@ GroupAdd, intellij, ahk_exe idea64.exe
                 Return
             }
     Return
-    ^[::Send !{Left}            ; Cmd+Left_Brace: Go to prior location in history
-    ^]::Send !{Right}           ; Cmd+Right_Brace: Go to next location in history
+
+    ^[::Send !{Left}            ; Cmd+Left_Bracket: Go to prior location in history
+    ^]::Send !{Right}           ; Cmd+Right_Bracket: Go to next location in history
     ^+o::Send ^{Enter}          ; Cmd+Shift+o: Open in new window (tabs not available)
-    ^Delete::Send {Delete}      ; Cmd+Delete: Delete / Send to Trash
-    ^BackSpace::Send {Delete}   ; Cmd+Delete: Delete / Send to Trash
-    ^d::return,                 ; Block the unusual Explorer "delete" shortcut of Ctrl+D, used for "bookmark" in similar apps
-    $Enter:: 			; Use Enter key to rename (F2), unless focus is inside a text input field. 
+    ^Delete::Send {Delete}      ; Cmd+Delete (actual Delete key): Delete / Send to Trash
+
+    $^BackSpace::               ; Cmd+Delete (Backspace key): Do wordwise "delete line" if in a text input field, else Send to Trash
     ControlGetFocus, fc, A
-    If fc contains Edit,Search,Notify,Windows.UI.Core.CoreWindow1,SysTreeView321
-        Send {Enter}
-    Else Send {F2}
-    Return
-    $BackSpace:: 		; Backspace (without Cmd): Block Backspace key with error beep, unless inside text input field
-    ControlGetFocus, fc, A
-    If fc contains Edit,Search,Notify,Windows.UI.Core.CoreWindow1
-        Send {BackSpace}
-    Else SoundBeep, 600, 300
-    Return
-    $Delete:: 			; Delete (without Cmd): Block Delete key with error beep, unless inside text input field
-    ControlGetFocus, fc, A
-    If fc contains Edit,Search,Notify,Windows.UI.Core.CoreWindow1
+    If ContainsAny(fc, "Edit", "Microsoft.UI.Content.DesktopChildSiteBridge1", "Notify", "Search", "SysTreeView321", "SysTreeView322", "Windows.UI.Core.CoreWindow1")
+        Send +{Home}{Delete}
+    Else
         Send {Delete}
-    Else SoundBeep, 600, 300
     Return
+
+    ^d::return,                 ; Block the unusual Explorer "delete" shortcut of Ctrl+D, used for "bookmark" elsewhere
+
+    $Enter::                    ; Use Enter key to rename (F2), unless focus is inside a text input field.
+    ControlGetFocus, fc, A
+    If ContainsAny(fc, "Edit", "Microsoft.UI.Content.DesktopChildSiteBridge1", "Notify", "Search", "SysTreeView321", "SysTreeView322", "Windows.UI.Core.CoreWindow1")
+        Send {Enter}
+    Else
+        Send {F2}
+    Return
+
+    $BackSpace::                ; Backspace (without Cmd): Block Backspace key with Mac-like error beep sound if not in a text input field
+    ControlGetFocus, fc, A
+    If ContainsAny(fc, "Edit", "Microsoft.UI.Content.DesktopChildSiteBridge1", "Notify", "Search", "Windows.UI.Core.CoreWindow1")
+        Send {BackSpace}
+    Else
+        SoundBeep, 600, 300     ; Error beep if backspace is pressed outside of editable fields
+    Return
+
+    $Delete::                   ; Delete (without Cmd): Block Delete key, unless inside text input field
+    ControlGetFocus, fc, A
+    If ContainsAny(fc, "Edit", "Search", "Notify", "Windows.UI.Core.CoreWindow1", "Microsoft.UI.Content.DesktopChildSiteBridge1")
+        Send {Delete}
+    Return
+
 #IfWinActive
 ; #########################################################################
 ; ##############   END OF FINDER MODS FOR FILE MANAGERS   #################
 ; #########################################################################
+
 
 #IfWinNotActive ahk_group remotes
     ; wordwise support
