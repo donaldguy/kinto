@@ -251,11 +251,18 @@ GroupAdd, intellij, ahk_exe idea64.exe
 
     ^Down::                     ; Cmd-Down: Navigate into the selected directory (has some odd behavior without the conditional)
     For window in ComObjCreate("Shell.Application").Windows
-        If WinActive() = window.hwnd
+        ControlGetFocus, fc, A
+        ; Prevent a script bug dialog from appearing while using Cmd+Down in a Control Panel window
+        If Not ContainsAny(fc, "DirectUIHWND3") and If WinActive() = window.hwnd
             For item in window.document.SelectedItems {
                 window.Navigate(item.Path)
                 Return
             }
+        ; Send Enter to open things while using Cmd+Down in a Control Panel window
+        If ContainsAny(fc, "DirectUIHWND3") {
+            Send {Enter}
+            Return
+        }
     Return
 
     ^[::Send !{Left}            ; Cmd+Left_Bracket: Go to prior location in history
@@ -265,7 +272,7 @@ GroupAdd, intellij, ahk_exe idea64.exe
 
     $^BackSpace::               ; Cmd+Delete (Backspace key): Do wordwise "delete line" if in a text input field, else Send to Trash
     ControlGetFocus, fc, A
-    If ContainsAny(fc, "Edit", "Microsoft.UI.Content.DesktopChildSiteBridge1", "Notify", "Search", "SysTreeView321", "SysTreeView322", "Windows.UI.Core.CoreWindow1")
+    If ContainsAny(fc, "DirectUIHWND1", "Edit", "Edit1", "Microsoft.UI.Content.DesktopChildSiteBridge1", "Microsoft.UI.Content.DesktopChildSiteBridge2", "Notify", "Search", "SysTreeView321", "SysTreeView322", "Windows.UI.Core.CoreWindow1")
         Send +{Home}{Delete}
     Else
         Send {Delete}
@@ -275,7 +282,7 @@ GroupAdd, intellij, ahk_exe idea64.exe
 
     $Enter::                    ; Use Enter key to rename (F2), unless focus is inside a text input field.
     ControlGetFocus, fc, A
-    If ContainsAny(fc, "Edit", "Microsoft.UI.Content.DesktopChildSiteBridge1", "Notify", "Search", "SysTreeView321", "SysTreeView322", "Windows.UI.Core.CoreWindow1")
+    If ContainsAny(fc, "DirectUIHWND1", "Edit", "Edit1", "Microsoft.UI.Content.DesktopChildSiteBridge1", "Microsoft.UI.Content.DesktopChildSiteBridge2", "Notify", "Search", "SysTreeView321", "SysTreeView322", "Windows.UI.Core.CoreWindow1")
         Send {Enter}
     Else
         Send {F2}
@@ -283,7 +290,7 @@ GroupAdd, intellij, ahk_exe idea64.exe
 
     $BackSpace::                ; Backspace (without Cmd): Block Backspace key with Mac-like error beep sound if not in a text input field
     ControlGetFocus, fc, A
-    If ContainsAny(fc, "Edit", "Microsoft.UI.Content.DesktopChildSiteBridge1", "Notify", "Search", "Windows.UI.Core.CoreWindow1")
+    If ContainsAny(fc, "DirectUIHWND1", "Edit", "Edit1", "Microsoft.UI.Content.DesktopChildSiteBridge1", "Microsoft.UI.Content.DesktopChildSiteBridge2", "Notify", "Search", "Windows.UI.Core.CoreWindow1")
         Send {BackSpace}
     Else
         SoundBeep, 600, 300     ; Error beep if backspace is pressed outside of editable fields
@@ -291,7 +298,7 @@ GroupAdd, intellij, ahk_exe idea64.exe
 
     $Delete::                   ; Delete (without Cmd): Block Delete key, unless inside text input field
     ControlGetFocus, fc, A
-    If ContainsAny(fc, "Edit", "Search", "Notify", "Windows.UI.Core.CoreWindow1", "Microsoft.UI.Content.DesktopChildSiteBridge1")
+    If ContainsAny(fc, "DirectUIHWND1", "Edit", "Edit1", "Microsoft.UI.Content.DesktopChildSiteBridge1", "Microsoft.UI.Content.DesktopChildSiteBridge2", "Notify", "Search", "Windows.UI.Core.CoreWindow1")
         Send {Delete}
     Return
 
