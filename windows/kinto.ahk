@@ -64,6 +64,8 @@ Menu, Tray, Add, Autodetect Keyboards, autodetect
 Menu, Tray, Add, Suspend Kinto, tray_suspend
 ; Add tray menu item for toggling Option key special character entry scheme
 Menu, Tray, Add, OptSpecialChars   Shift+Opt+Cmd+O, toggle_optspecialchars
+; Add tray menu item for toggling media_arrows_fix
+Menu, Tray, Add, Media Arrows Fix   Shift+Opt+Cmd+M, toggle_media_arrows_fix
 ; Menu, Tray, Add, Returns to Desktop, min
 Menu, Tray, Add
 Menu, Tray, Add, Close, Exit
@@ -128,6 +130,12 @@ Exit() {
         WinClose
 
     ExitApp
+}
+
+; Set this variable to 1 to ENABLE Media Arrows Fix by default
+media_arrows_fix:=0
+if (media_arrows_fix=1) {
+    Menu, Tray, Check, Media Arrows Fix   Shift+Opt+Cmd+M
 }
 
 SetTitleMatchMode, 2
@@ -1213,3 +1221,40 @@ toggle_optspecialchars:
     $!+/::Send, {U+00BF} ; Inverted Question Mark {U+00BF}: ¿ (Alt+0191)
 
 #If ; ### END of special character insertion with Option(Alt) key
+
+; ##########################################################################################
+; ###   MEDIA ARROWS FIX
+; ###   Fix to make laptops with media functions on arrow keys act like Apple laptops
+; ###   To set this to ENABLED by default, search for "Enable Media Arrows Fix by default"
+; ##########################################################################################
+
+; Shortcut to activate media arrow keys fix
+^+!m::Gosub, toggle_media_arrows_fix
+
+; Function for activation of media arrows fix by tray menu item or keyboard shortcut
+toggle_media_arrows_fix:
+    media_arrows_fix:=!media_arrows_fix         ; Toggle value of optspecialchars variable on/off
+    if (media_arrows_fix = 1) {
+        Menu, Tray, Check, Media Arrows Fix   Shift+Opt+Cmd+M
+        MsgBox, 0, ALERT, % "Media Arrows Fix is now ENABLED.`n`n"
+                            . "When used with the Fn key, arrow keys with `n"
+                            . "media functions will now behave as if they are`n"
+                            . "PgUp/PgDn/Home/End navigation keys.`n`n"
+                            . "To ENABLE by default, search in kinto.ahk for`n"
+                            . "   'Enable Media Arrows Fix by default'`n`n"
+                            . "Disable from tray menu or with Shift+Opt+Cmd+M."
+        return
+    }
+    if (media_arrows_fix = 0) {
+        Menu, Tray, Uncheck, Media Arrows Fix   Shift+Opt+Cmd+M
+        MsgBox, 0, ALERT, Media arrow keys fix is now DISABLED.
+        return
+    }
+
+#If !WinActive("ahk_group remotes") && media_arrows_fix = 1
+    ; Fix for media functions on laptop arrow keys
+    $Media_Play_Pause::PgUp
+    $Media_Stop::PgDn
+    $Media_Prev::Home
+    $Media_Next::End
+#If
