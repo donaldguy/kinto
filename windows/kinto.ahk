@@ -64,6 +64,10 @@ Menu, Tray, Add, Autodetect Keyboards, autodetect
 Menu, Tray, Add, Suspend Kinto, tray_suspend
 ; Add tray menu item for toggling Option key special character entry scheme
 Menu, Tray, Add, OptSpecialChars   Shift+Opt+Cmd+O, toggle_optspecialchars
+; Add tray menu item for toggling mac_numpad
+Menu, Tray, Add, Mac Numpad           Option+NumLock, toggle_mac_numpad
+; Add tray menu item for toggling media_arrows_fix
+Menu, Tray, Add, Media Arrows Fix   Shift+Opt+Cmd+M, toggle_media_arrows_fix
 ; Menu, Tray, Add, Returns to Desktop, min
 Menu, Tray, Add
 Menu, Tray, Add, Close, Exit
@@ -128,6 +132,19 @@ Exit() {
         WinClose
 
     ExitApp
+}
+
+; Set this variable to 1 to ENABLE Mac Numpad feature by default
+mac_numpad:=1
+if (mac_numpad=1) {
+    SetNumLockState, AlwaysOn
+    Menu, Tray, Check, Mac Numpad           Option+NumLock
+}
+
+; Set this variable to 1 to ENABLE Media Arrows Fix by default
+media_arrows_fix:=0
+if (media_arrows_fix=1) {
+    Menu, Tray, Check, Media Arrows Fix   Shift+Opt+Cmd+M
 }
 
 SetTitleMatchMode, 2
@@ -220,12 +237,26 @@ GroupAdd, intellij, ahk_exe idea64.exe
 ; +F8::Send {LCtrl down}{LWin down}{left}{LCtrl up}{LWin up}  ; Comment out on host machine
 ; +F6::Send {LCtrl down}{LWin down}{right}{LCtrl up}{LWin up} ; Comment out on host machine
 
+
 ; #########################################################################
 ; #############   START OF FINDER MODS FOR FILE MANAGERS   ################
 ; #########################################################################
 ; Finder Mods for Windows File Explorer (explore.exe)
-#IfWinActive ahk_class CabinetWClass ahk_exe explorer.exe
-    ^i::Send !{Enter}           ; Cmd+i: Get Info / Properties
+#If WinActive("ahk_class CabinetWClass ahk_exe explorer.exe") or WinActive("ahk_class Progman ahk_exe explorer.exe")
+
+
+    ; Utility function to handle comparing the window class (first argument) to multiple possible strings
+    ContainsAny(fc, options*) {  ; The asterisk allows passing multiple arguments
+        for index, value in options
+            if InStr(fc, value)
+                return true
+        return false
+    }
+
+
+    ^+[::Send ^+{Tab}           ; Tab nav: Go to prior tab (left)
+    ^+]::Send ^{Tab}            ; Tab nav: Go to next tab (right)
+    ^i::Send !{Enter}           ; Cmd+I: Get Info / Properties
     ^r::Send {F5}               ; Cmd+R: Refresh view (Not actually a Finder shortcut? But works in Linux file browsers too.)
     ^1::Send ^+2                ; Cmd+1: View as Icons
     ^2::Send ^+6                ; Cmd+2: View as List (Detailed)
@@ -234,42 +265,65 @@ GroupAdd, intellij, ahk_exe idea64.exe
     ^Up::Send !{Up}             ; Cmd+Up: Up to parent folder
     ^Left::Send !{Left}         ; Cmd+Left: Go to prior location in history
     ^Right::Send !{Right}       ; Cmd+Right: Go to next location in history
-    ^Down::                     ; Cmd-Down: Navigate into the selected directory
+
+    ^Down::                     ; Cmd-Down: Navigate into the selected directory (has some odd behavior without the conditional)
     For window in ComObjCreate("Shell.Application").Windows
-        If WinActive() = window.hwnd
+        ControlGetFocus, fc, A
+        ; Prevent a script bug dialog from appearing while using Cmd+Down in a Control Panel window
+        If Not ContainsAny(fc, "DirectUIHWND3") and If WinActive() = window.hwnd
             For item in window.document.SelectedItems {
                 window.Navigate(item.Path)
                 Return
             }
+        ; Send Enter to open things while using Cmd+Down in a Control Panel window
+        If ContainsAny(fc, "DirectUIHWND3", "SysListView321") {
+            Send {Enter}
+            Return
+        }
     Return
-    ^[::Send !{Left}            ; Cmd+Left_Brace: Go to prior location in history
-    ^]::Send !{Right}           ; Cmd+Right_Brace: Go to next location in history
+
+    ^[::Send !{Left}            ; Cmd+Left_Bracket: Go to prior location in history
+    ^]::Send !{Right}           ; Cmd+Right_Bracket: Go to next location in history
     ^+o::Send ^{Enter}          ; Cmd+Shift+o: Open in new window (tabs not available)
-    ^Delete::Send {Delete}      ; Cmd+Delete: Delete / Send to Trash
-    ^BackSpace::Send {Delete}   ; Cmd+Delete: Delete / Send to Trash
-    ^d::return,                 ; Block the unusual Explorer "delete" shortcut of Ctrl+D, used for "bookmark" in similar apps
-    $Enter:: 			; Use Enter key to rename (F2), unless focus is inside a text input field. 
+    ^Delete::Send {Delete}      ; Cmd+Delete (actual Delete key): Delete / Send to Trash
+
+    $^BackSpace::               ; Cmd+Delete (Backspace key): Do wordwise "delete line" if in a text input field, else Send to Trash
     ControlGetFocus, fc, A
-    If fc contains Edit,Search,Notify,Windows.UI.Core.CoreWindow1,SysTreeView321
-        Send {Enter}
-    Else Send {F2}
-    Return
-    $BackSpace:: 		; Backspace (without Cmd): Block Backspace key with error beep, unless inside text input field
-    ControlGetFocus, fc, A
-    If fc contains Edit,Search,Notify,Windows.UI.Core.CoreWindow1
-        Send {BackSpace}
-    Else SoundBeep, 600, 300
-    Return
-    $Delete:: 			; Delete (without Cmd): Block Delete key with error beep, unless inside text input field
-    ControlGetFocus, fc, A
-    If fc contains Edit,Search,Notify,Windows.UI.Core.CoreWindow1
+    If ContainsAny(fc, "DirectUIHWND1", "Edit", "Edit1", "Microsoft.UI.Content.DesktopChildSiteBridge1", "Microsoft.UI.Content.DesktopChildSiteBridge2", "Notify", "Search", "SysTreeView321", "SysTreeView322", "Windows.UI.Core.CoreWindow1")
+        Send +{Home}{Delete}
+    Else
         Send {Delete}
-    Else SoundBeep, 600, 300
     Return
+
+    ^d::return,                 ; Block the unusual Explorer "delete" shortcut of Ctrl+D, used for "bookmark" elsewhere
+
+    $Enter::                    ; Use Enter key to rename (F2), unless focus is inside a text input field.
+    ControlGetFocus, fc, A
+    If ContainsAny(fc, "DirectUIHWND1", "Edit", "Edit1", "Microsoft.UI.Content.DesktopChildSiteBridge1", "Microsoft.UI.Content.DesktopChildSiteBridge2", "Notify", "Search", "SysTreeView321", "SysTreeView322", "Windows.UI.Core.CoreWindow1")
+        Send {Enter}
+    Else
+        Send {F2}
+    Return
+
+    $BackSpace::                ; Backspace (without Cmd): Block Backspace key with Mac-like error beep sound if not in a text input field
+    ControlGetFocus, fc, A
+    If ContainsAny(fc, "DirectUIHWND1", "Edit", "Edit1", "Microsoft.UI.Content.DesktopChildSiteBridge1", "Microsoft.UI.Content.DesktopChildSiteBridge2", "Notify", "Search", "Windows.UI.Core.CoreWindow1")
+        Send {BackSpace}
+    Else
+        SoundBeep, 600, 300     ; Error beep if backspace is pressed outside of editable fields
+    Return
+
+    $Delete::                   ; Delete (without Cmd): Block Delete key, unless inside text input field
+    ControlGetFocus, fc, A
+    If ContainsAny(fc, "DirectUIHWND1", "Edit", "Edit1", "Microsoft.UI.Content.DesktopChildSiteBridge1", "Microsoft.UI.Content.DesktopChildSiteBridge2", "Notify", "Search", "Windows.UI.Core.CoreWindow1")
+        Send {Delete}
+    Return
+
 #IfWinActive
 ; #########################################################################
 ; ##############   END OF FINDER MODS FOR FILE MANAGERS   #################
 ; #########################################################################
+
 
 #IfWinNotActive ahk_group remotes
     ; wordwise support
@@ -290,6 +344,27 @@ GroupAdd, intellij, ahk_exe idea64.exe
 #If
 
 #IfWinNotActive ahk_group remotes
+
+    ; Switch within the windows of a single application with Cmd+Grave (backtick)
+    same_app_switch()
+    {
+        SetTitleMatchMode, 2
+        DetectHiddenWindows, % "off"
+        winId := WinExist("A")
+        WinGetClass, winClass, % "ahk_id " . winId
+        WinGet, winExe, ProcessName, % "ahk_id " . winId
+        title := "ahk_class " . winClass . " ahk_exe " . winExe
+        WinGet, Instances, Count, % title
+        If ( Instances > 1 )
+        {
+            WinSet, Bottom,, % "ahk_id " . winId
+            WinActivate, % title
+        }
+    }
+
+    ^SC029::
+        same_app_switch()
+    Return
 
     ; New AltTab and CtrlTab fix
     *tab:: 
@@ -931,20 +1006,19 @@ return
 toggle_optspecialchars:
     optspecialchars:=!optspecialchars         ; Toggle value of optspecialchars variable on/off
     if (optspecialchars = 1) {
-        Menu, Tray, Check, OptSpecialChars   Shift+Opt+Cmd+O
+        Menu, Tray, Check, OptSpecialChars      Shift+Opt+Cmd+O
         MsgBox, 0, ALERT, % "Option key special character entry scheme is now ENABLED.`n`n"
                             . "WARNING: This will interfere with many Alt and Alt-Shift shortcuts.`n`n"
                             . "Disable from tray menu or with Shift+Opt+Cmd+O."
         return
     }
     if (optspecialchars = 0) {
-        Menu, Tray, Uncheck, OptSpecialChars   Shift+Opt+Cmd+O
+        Menu, Tray, Uncheck, OptSpecialChars      Shift+Opt+Cmd+O
         MsgBox, 0, ALERT, Option key special character entry scheme is now DISABLED.
         return
     }
     return
 
-; #IfWinNotActive ahk_group remotes
 #If !WinActive("ahk_group remotes") && optspecialchars = 1
 
     ; ######   NUMBER KEYS ROW   ######
@@ -955,39 +1029,50 @@ toggle_optspecialchars:
     $!SC029::
         ; Use Apple "dead keys" Option key method to attach accents to next character typed
         ; Grave accent activated by Option+` (Alt plus scan code SC029, or !SC029)
+        Send, {U+0060}{Shift down}{Left}{Shift up}
         StringCaseSense, On
         ; watch next input string
-        Input, UserInput, L1 
-        Switch UserInput {
-            Case Esc: Return            ; Watch for Escape key, cancel dead keys sequence
-            Case "a": Send, {U+00E0}              ; à {U+00E0} (Alt+0224)
-            Case "e": Send, {U+00E8}              ; è {U+00E8} (Alt+0232)
-            Case "i": Send, {U+00EC}              ; ì {U+00EC} (Alt+0236)
-            Case "o": Send, {U+00F2}              ; ò {U+00F2} (Alt+0242)
-            Case "u": Send, {U+00F9}              ; ù {U+00F9} (Alt+0249)
-            Case "A": Send, {U+00C0}              ; À {U+00C0} (Alt+0192)
-            Case "E": Send, {U+00C8}              ; È {U+00C8} (Alt+0200)
-            Case "I": Send, {U+00CC}              ; Ì {U+00CC} (Alt+0204)
-            Case "O": Send, {U+00D2}              ; Ò {U+00D2} (Alt+0210)
-            Case "U": Send, {U+00D9}              ; Ù {U+00D9} (Alt+0217)
-            Default: Send, %UserInput%          ; No match? Send input through.
+        Input, UserInput, L1, {BS}{Del}{Left}{Right}{Up}{Down}{LAlt}{RAlt}{LCtrl}{RCtrl}
+        ; MsgBox % GetKeyName(UserInput)              ; Debugging: Show normalized key name
+        ; MsgBox % ErrorLevel                         ; Debugging: Show ErrorLevel value
+        name := GetKeyName(UserInput)               ; Get normalized name of UserInput
+        e := SubStr(ErrorLevel, 8)                  ; Get normalized name of EndKey
+        Switch {
+            Default:                Send, {Right}%UserInput%    ; No match? Leave accent char and send input.
+            Case name = "Escape":   Send, {Right}               ; Escape: Leave accent character, exit dead key
+            Case name = "Space":    Send, {Right}               ; Space: Leave accent character, exit dead key
+            Case e = "Up":          Send, {Right}{Up}           ; Up: Leave accent character, exit dead key, move
+            Case e = "Down":        Send, {Right}{Down}         ; Down: Leave accent character, exit dead key, move
+            Case e = "Left":        Send, {Right}{Left}         ; Left: Leave accent character, exit dead key, move
+            Case e = "Right":       Send, {Right}{Right}        ; Right: Leave accent character, exit dead key, move
+            Case e = "Backspace":   Send, {Right}{BS}           ; Backspace: Delete accent character
+            Case UserInput == "a":  Send, {U+00E0}              ; à {U+00E0} (Alt+0224)
+            Case UserInput == "e":  Send, {U+00E8}              ; è {U+00E8} (Alt+0232)
+            Case UserInput == "i":  Send, {U+00EC}              ; ì {U+00EC} (Alt+0236)
+            Case UserInput == "o":  Send, {U+00F2}              ; ò {U+00F2} (Alt+0242)
+            Case UserInput == "u":  Send, {U+00F9}              ; ù {U+00F9} (Alt+0249)
+            Case UserInput == "A":  Send, {U+00C0}              ; À {U+00C0} (Alt+0192)
+            Case UserInput == "E":  Send, {U+00C8}              ; È {U+00C8} (Alt+0200)
+            Case UserInput == "I":  Send, {U+00CC}              ; Ì {U+00CC} (Alt+0204)
+            Case UserInput == "O":  Send, {U+00D2}              ; Ò {U+00D2} (Alt+0210)
+            Case UserInput == "U":  Send, {U+00D9}              ; Ù {U+00D9} (Alt+0217)
         }
         Return
 
     ; ###   SC029 is ` (Grave key above Tab)
     $!+SC029::Send, {U+0060} ; Grave Accent diacritic (non-combining) {U+0060}: ` (Alt+96)
     $!1::Send,  {U+00A1} ; Inverted Exclamation Mark {U+00A1}: ¡ (Alt+0161)
-    $!+1::Send, {U+2044} ; Fraction Slash, solidus (U+2044): ⁄ (Alt+8260) [Needs Unicode]
+    $!+1::Send, {U+2044} ; Fraction Slash, solidus {U+2044}: ⁄ (Alt+8260) [Needs Unicode]
     $!2::Send,  {U+2122} ; Trade Mark Sign Emoji {U+2122}: ™ (Alt+0153)
     $!+2::Send, {U+20AC} ; Euro currency symbol {U+20AC}: € (Alt+0128)
     $!3::Send,  {U+00A3} ; British Pound currency symbol {U+00A3}: £ (Alt+0163)
-    $!+3::Send, {U+2039} ; Single Left-Pointing Angle Quotation mark {U+2039}: (Alt+0139)
+    $!+3::Send, {U+2039} ; Single Left-Pointing Angle Quotation mark {U+2039}: ‹ (Alt+0139)
     $!4::Send,  {U+00A2} ; Cent currency symbol {U+00A2}: ¢ (Alt+0162)
-    $!+4::Send, {U+203A} ; Single Right-Pointing Angle Quotation mark (U+203A): (Alt+0155)
+    $!+4::Send, {U+203A} ; Single Right-Pointing Angle Quotation mark {U+203A}: › (Alt+0155)
     $!5::Send,  {U+221E} ; Infinity mathematical symbol {U+221E}: ∞ (Alt+236)
-    $!+5::Send, {U+FB01} ; fi latin small ligature: ﬁ (U+FB01) (Alt+64257) [Needs Unicode]
+    $!+5::Send, {U+FB01} ; fi Latin small ligature {U+FB01}: ﬁ (Alt+64257) [Needs Unicode]
     $!6::Send,  {U+00A7} ; Section symbol {U+00A7}: § (Alt+0167)
-    $!+6::Send, {U+FB02} ; fl small ligature: (U+FB02) (Alt+64258) [Needs Unicode.]
+    $!+6::Send, {U+FB02} ; fl Latin small ligature {U+FB02}: ﬂ (Alt+64258) [Needs Unicode]
     $!7::Send,  {U+00B6} ; Paragraph mark (Pilcrow) symbol {U+00B6}: ¶ (Alt+0182)
     $!+7::Send, {U+2021} ; Double dagger (cross) symbol {U+2021}: ‡ (Alt+0135)
     $!8::Send,  {U+2022} ; Bullet point symbol {U+2022}: • (Alt+0149) 
@@ -998,7 +1083,7 @@ toggle_optspecialchars:
     $!+0::Send, {U+201A} ; Single low-9 quotation mark {U+201A}: ‚ (Alt+0130) 
     $!-::Send,  {U+2013} ; En Dash symbol {U+2013}: – (Alt+0150)
     $!+-::Send, {U+2014} ; Em Dash symbol {U+2014}: — (Alt+0151)
-    $!=::Send,  {U+2260} ; Not Equal To symbol (U+2260): ≠ (Alt+8800) [Needs Unicode]
+    $!=::Send,  {U+2260} ; Not Equal To symbol {U+2260}: ≠ (Alt+8800) [Needs Unicode]
     $!+=::Send, {U+00B1} ; Plus Minus symbol {U+00B1}: ± (Alt+0177)
 
 
@@ -1009,7 +1094,7 @@ toggle_optspecialchars:
 
     $!q::Send,  {U+0153} ; Small oe (oethel) ligature {U+0153}: œ (Alt+0156)
     $!+q::Send, {U+0152} ; Capital OE (Oethel) ligature {U+0152}: Œ (Alt+0140)
-    $!w::Send,  {U+2211} ; N-Ary Summation (sigma) notation (U+2211}: ∑ [Needs Unicode]
+    $!w::Send,  {U+2211} ; N-Ary Summation (sigma) notation {U+2211}: ∑ [Needs Unicode]
     $!+w::Send, {U+201E} ; Double Low-9 Quotation mark {U+201E}: „ (Alt+0132)
 
     ; Dead_Keys_Accent_Acute
@@ -1017,22 +1102,33 @@ toggle_optspecialchars:
     $!e::
         ; Use Apple "dead keys" Option key method to attach accents to next character typed
         ; Acute accent activated by Option+e (logical Alt+e)
+        Send, {U+00B4}{Shift down}{Left}{Shift up}
         StringCaseSense, On
         ; watch next input string
-        Input, UserInput, L1 
-        Switch UserInput {
-            Case Esc: Return            ; Watch for Escape key, cancel dead keys sequence
-            Case "a": Send, {U+00E1}            ; á {U+00E1} (Alt+0225)
-            Case "e": Send, {U+00E9}            ; é {U+00E9} (Alt+0233)
-            Case "i": Send, {U+00ED}            ; í {U+00ED} (Alt+0237)
-            Case "o": Send, {U+00F3}            ; ó {U+00F3} (Alt+0243)
-            Case "u": Send, {U+00FA}            ; ú {U+00FA} (Alt+0250)
-            Case "A": Send, {U+00C1}            ; Á {U+00C1} (Alt+0193)
-            Case "E": Send, {U+00C9}            ; É {U+00C9} (Alt+0201)
-            Case "I": Send, {U+00CD}            ; Í {U+00CD} (Alt+0205)
-            Case "O": Send, {U+00D3}            ; Ó {U+00D3} (Alt+0211)
-            Case "U": Send, {U+00DA}            ; Ú {U+00DA} (Alt+0218)
-            Default: Send, %UserInput%          ; No match? Send input through.
+        Input, UserInput, L1, {BS}{Del}{Left}{Right}{Up}{Down}{LAlt}{RAlt}{LCtrl}{RCtrl}
+        ; MsgBox % GetKeyName(UserInput)              ; Debugging: Show normalized key name
+        ; MsgBox % ErrorLevel                         ; Debugging: Show ErrorLevel value
+        name := GetKeyName(UserInput)               ; Get normalized name of UserInput
+        e := SubStr(ErrorLevel, 8)                  ; Get normalized name of EndKey
+        Switch {
+            Default:                Send, {Right}%UserInput%    ; No match? Leave accent char and send input.
+            Case name = "Escape":   Send, {Right}               ; Escape: Leave accent character, exit dead key
+            Case name = "Space":    Send, {Right}               ; Space: Leave accent character, exit dead key
+            Case e = "Up":          Send, {Right}{Up}           ; Up: Leave accent character, exit dead key, move
+            Case e = "Down":        Send, {Right}{Down}         ; Down: Leave accent character, exit dead key, move
+            Case e = "Left":        Send, {Right}{Left}         ; Left: Leave accent character, exit dead key, move
+            Case e = "Right":       Send, {Right}{Right}        ; Right: Leave accent character, exit dead key, move
+            Case e = "Backspace":   Send, {Right}{BS}           ; Backspace: Delete accent character
+            Case UserInput == "a":  Send, {U+00E1}              ; á {U+00E1} (Alt+0225)
+            Case UserInput == "e":  Send, {U+00E9}              ; é {U+00E9} (Alt+0233)
+            Case UserInput == "i":  Send, {U+00ED}              ; í {U+00ED} (Alt+0237)
+            Case UserInput == "o":  Send, {U+00F3}              ; ó {U+00F3} (Alt+0243)
+            Case UserInput == "u":  Send, {U+00FA}              ; ú {U+00FA} (Alt+0250)
+            Case UserInput == "A":  Send, {U+00C1}              ; Á {U+00C1} (Alt+0193)
+            Case UserInput == "E":  Send, {U+00C9}              ; É {U+00C9} (Alt+0201)
+            Case UserInput == "I":  Send, {U+00CD}              ; Í {U+00CD} (Alt+0205)
+            Case UserInput == "O":  Send, {U+00D3}              ; Ó {U+00D3} (Alt+0211)
+            Case UserInput == "U":  Send, {U+00DA}              ; Ú {U+00DA} (Alt+0218)
         }
         Return
 
@@ -1040,67 +1136,89 @@ toggle_optspecialchars:
     $!r::Send,  {U+00AE} ; Registered Trade Mark Sign {U+00AE}: ® (Alt+0174)
     $!+r::Send, {U+2030} ; Per mille symbol {U+2030}: ‰ (Alt+0137)
     $!t::Send,  {U+2020} ; Simple dagger (cross) symbol {U+2020}: † (Alt+0134)
-    $!+t::Send, {U+02C7} ; Caron/hacek diacritic (non-combining) (U+02C7): ˇ (Alt+0134)
+    $!+t::Send, {U+02C7} ; Caron/hacek diacritic (non-combining) {U+02C7}: ˇ (Alt+0134)
     $!y::Send,  {U+00A5} ; Yen currency symbol {U+00A5}: ¥ (Alt+0165)
-    $!+y::Send, {U+00C1} ; Latin Capital Letter a with Acute (U+00C1): Á (Alt+0193)
+    $!+y::Send, {U+00C1} ; Latin Capital Letter a with Acute {U+00C1}: Á (Alt+0193)
 
     ; Dead_Keys_Accent_Umlaut
     ; Umlaut/Diaeresis accent: Option+u, then key to accent
     $!u::
         ; Use Apple "dead keys" Option key method to attach accents to next character typed
         ; Umlaut/Diaeresis accent activated by Option+u (logical Alt+u)
+        Send, {U+00A8}{Shift down}{Left}{Shift up}
         StringCaseSense, On
         ; watch next input string
-        Input, UserInput, L1 
-        Switch UserInput {
-            Case Esc: Return            ; Watch for Escape key, cancel dead keys sequence
-            Case "a": Send, {U+00E4}            ; ä {U+00E4} (Alt+0228)
-            Case "e": Send, {U+00EB}            ; ë {U+00EB} (Alt+0235)
-            Case "i": Send, {U+00EF}            ; ï {U+00EF} (Alt+0239)
-            Case "o": Send, {U+00F6}            ; ö {U+00F6} (Alt+0246)
-            Case "u": Send, {U+00FC}            ; ü {U+00FC} (Alt+0252)
-            Case "y": Send, {U+00FF}            ; ÿ {U+00FF} (Alt+0255)
-            Case "A": Send, {U+00C4}            ; Ä {U+00C4} (Alt+0196)
-            Case "E": Send, {U+00CB}            ; Ë {U+00CB} (Alt+0203)
-            Case "I": Send, {U+00CF}            ; Ï {U+00CF} (Alt+0207)
-            Case "O": Send, {U+00D6}            ; Ö {U+00D6} (Alt+0214)
-            Case "U": Send, {U+00DC}            ; Ü {U+00DC} (Alt+0220)
-            Case "Y": Send, {U+0178}            ; Ÿ {U+0178} (Alt+0159)
-            Default: Send, %UserInput%          ; No match? Send input through.
+        Input, UserInput, L1, {BS}{Del}{Left}{Right}{Up}{Down}{LAlt}{RAlt}{LCtrl}{RCtrl}
+        ; MsgBox % GetKeyName(UserInput)              ; Debugging: Show normalized key name
+        ; MsgBox % ErrorLevel                         ; Debugging: Show ErrorLevel value
+        name := GetKeyName(UserInput)               ; Get normalized name of UserInput
+        e := SubStr(ErrorLevel, 8)                  ; Get normalized name of EndKey
+        Switch {
+            Default:                Send, {Right}%UserInput%    ; No match? Leave accent char and send input.
+            Case name = "Escape":   Send, {Right}               ; Escape: Leave accent character, exit dead key
+            Case name = "Space":    Send, {Right}               ; Space: Leave accent character, exit dead key
+            Case e = "Up":          Send, {Right}{Up}           ; Up: Leave accent character, exit dead key, move
+            Case e = "Down":        Send, {Right}{Down}         ; Down: Leave accent character, exit dead key, move
+            Case e = "Left":        Send, {Right}{Left}         ; Left: Leave accent character, exit dead key, move
+            Case e = "Right":       Send, {Right}{Right}        ; Right: Leave accent character, exit dead key, move
+            Case e = "Backspace":   Send, {Right}{BS}           ; Backspace: Delete accent character
+            Case UserInput == "a":  Send, {U+00E4}              ; ä {U+00E4} (Alt+0228)
+            Case UserInput == "e":  Send, {U+00EB}              ; ë {U+00EB} (Alt+0235)
+            Case UserInput == "i":  Send, {U+00EF}              ; ï {U+00EF} (Alt+0239)
+            Case UserInput == "o":  Send, {U+00F6}              ; ö {U+00F6} (Alt+0246)
+            Case UserInput == "u":  Send, {U+00FC}              ; ü {U+00FC} (Alt+0252)
+            Case UserInput == "y":  Send, {U+00FF}              ; ÿ {U+00FF} (Alt+0255)
+            Case UserInput == "A":  Send, {U+00C4}              ; Ä {U+00C4} (Alt+0196)
+            Case UserInput == "E":  Send, {U+00CB}              ; Ë {U+00CB} (Alt+0203)
+            Case UserInput == "I":  Send, {U+00CF}              ; Ï {U+00CF} (Alt+0207)
+            Case UserInput == "O":  Send, {U+00D6}              ; Ö {U+00D6} (Alt+0214)
+            Case UserInput == "U":  Send, {U+00DC}              ; Ü {U+00DC} (Alt+0220)
+            Case UserInput == "Y":  Send, {U+0178}              ; Ÿ {U+0178} (Alt+0159)
         }
         Return
 
-    $!+u::Send, {U+00A8} ; Umlaut/Diaeresis diacritic (non-combining) {U+00A8}: (Alt+0168)
+    $!+u::Send, {U+00A8} ; Umlaut/Diaeresis diacritic (non-combining) {U+00A8}: ¨ (Alt+0168)
 
     ; Dead_Keys_Accent_Circumflex
     ; Circumflex accent: Option+i, then key to accent
     $!i::
         ; Use Apple "dead keys" Option key method to attach accents to next character typed
         ; Circumflex accent activated by Option+i (logical Alt+i)
+        Send, {U+02C6}{Shift down}{Left}{Shift up}
         StringCaseSense, On
         ; watch next input string
-        Input, UserInput, L1 
-        Switch UserInput {
-            Case Esc: Return            ; Watch for Escape key, cancel dead keys sequence
-            Case "a": Send, {U+00E2}            ; â {U+00E2} (Alt+0226)
-            Case "e": Send, {U+00EA}            ; ê {U+00EA} (Alt+0234)
-            Case "i": Send, {U+00EE}            ; î {U+00EE} (Alt+0238)
-            Case "o": Send, {U+00F4}            ; ô {U+00F4} (Alt+0244)
-            Case "u": Send, {U+00FB}            ; û {U+00FB} (Alt+0251)
-            Case "A": Send, {U+00C2}            ; Â {U+00C2} (Alt+0194)
-            Case "E": Send, {U+00CA}            ; Ê {U+00CA} (Alt+0202)
-            Case "I": Send, {U+00CE}            ; Î {U+00CE} (Alt+0206)
-            Case "O": Send, {U+00D4}            ; Ô {U+00D4} (Alt+0212)
-            Case "U": Send, {U+00DB}            ; Û {U+00DB} (Alt+0219)
-            Default: Send, %UserInput%          ; No match? Send input through.
+        Input, UserInput, L1, {BS}{Del}{Left}{Right}{Up}{Down}{LAlt}{RAlt}{LCtrl}{RCtrl}
+        ; MsgBox % GetKeyName(UserInput)              ; Debugging: Show normalized key name
+        ; MsgBox % ErrorLevel                         ; Debugging: Show ErrorLevel value
+        name := GetKeyName(UserInput)               ; Get normalized name of UserInput
+        e := SubStr(ErrorLevel, 8)                  ; Get normalized name of EndKey
+        Switch {
+            Default:                Send, {Right}%UserInput%    ; No match? Leave accent char and send input.
+            Case name = "Escape":   Send, {Right}               ; Escape: Leave accent character, exit dead key
+            Case name = "Space":    Send, {Right}               ; Space: Leave accent character, exit dead key
+            Case e = "Up":          Send, {Right}{Up}           ; Up: Leave accent character, exit dead key, move
+            Case e = "Down":        Send, {Right}{Down}         ; Down: Leave accent character, exit dead key, move
+            Case e = "Left":        Send, {Right}{Left}         ; Left: Leave accent character, exit dead key, move
+            Case e = "Right":       Send, {Right}{Right}        ; Right: Leave accent character, exit dead key, move
+            Case e = "Backspace":   Send, {Right}{BS}           ; Backspace: Delete accent character
+            Case UserInput == "a":  Send, {U+00E2}              ; â {U+00E2} (Alt+0226)
+            Case UserInput == "e":  Send, {U+00EA}              ; ê {U+00EA} (Alt+0234)
+            Case UserInput == "i":  Send, {U+00EE}              ; î {U+00EE} (Alt+0238)
+            Case UserInput == "o":  Send, {U+00F4}              ; ô {U+00F4} (Alt+0244)
+            Case UserInput == "u":  Send, {U+00FB}              ; û {U+00FB} (Alt+0251)
+            Case UserInput == "A":  Send, {U+00C2}              ; Â {U+00C2} (Alt+0194)
+            Case UserInput == "E":  Send, {U+00CA}              ; Ê {U+00CA} (Alt+0202)
+            Case UserInput == "I":  Send, {U+00CE}              ; Î {U+00CE} (Alt+0206)
+            Case UserInput == "O":  Send, {U+00D4}              ; Ô {U+00D4} (Alt+0212)
+            Case UserInput == "U":  Send, {U+00DB}              ; Û {U+00DB} (Alt+0219)
         }
         Return
 
-    $!+i::Send, {U+02C6} ; Modifier Letter Circumflex Accent (U+02C6): ˆ (Alt+0137)
+    $!+i::Send, {U+02C6} ; Modifier Letter Circumflex Accent {U+02C6}: ˆ (Alt+0137)
     $!o::Send,  {U+00F8} ; Latin Small Letter o with Stroke {U+00F8}: ø (Alt+0248)
     $!+o::Send, {U+00D8} ; Latin Capital Letter O with Stroke {U+00D8}: Ø (Alt+0216)
     $!p::Send,  {U+03C0} ; Greek Small Letter Pi {U+03C0}: π (Alt+227)
-    $!+p::Send, {U+220F} ; N-Ary Product mathematical symbol (U+220F): ∏ [Needs Unicode]
+    $!+p::Send, {U+220F} ; N-Ary Product mathematical symbol {U+220F}: ∏ [Needs Unicode]
     $![::Send,  {U+201C} ; Left Double Quotation Mark {U+201C}: “ (Alt+0147)
     $!+[::Send, {U+201D} ; Right Double Quotation Mark {U+201D}: ” (Alt+8)
     $!]::Send,  {U+2018} ; Left Single Quotation Mark {U+2018}: ‘ (Alt+0145)
@@ -1132,7 +1250,7 @@ toggle_optspecialchars:
     $!+h::Send, {U+00D3} ; Latin Capital Letter O with Acute {U+00D3}: Ó (Alt+0211)
     $!j::Send,  {U+2206} ; Increment, laplace operator symbol {U+2206}: ∆ [Needs Unicode]
     $!+j::Send, {U+00D4} ; Latin Capital Letter O with Circumflex {U+00D4}: Ô (Alt+0212)
-    $!k::Send,  {U+02DA} ; Ring Above diacritic (non-combining) {U+02DA}: ˚ [Needs Unicode] (NOT degree sign/symbol)
+    $!k::Send,  {U+02DA} ; Ring Above diacritic (non-combining) {U+02DA}: ˚ [Needs Unicode]
 
     ; Apple logo {U+F8FF}:  [Unicode Private Use Area, req's Baskerville Old Face font]
     ; $!+k::Send, {U+F8FF}    ; This Unicode address only works with Mac fonts
@@ -1173,43 +1291,125 @@ toggle_optspecialchars:
 
     $!z::Send,  {U+03A9} ; Greek Capital Letter Omega symbol {U+03A9} Ω (Alt+234)
     $!+z::Send, {U+00B8} ; Spacing Cedilla diacritic symbol (non-combining) {U+00B8}: ¸ (Alt+0184)
-    $!x::Send,  {U+2248} ; Almost Equal To symbol (U+2248): ≈ (Alt+247)
-    $!+x::Send, {U+02DB} ; Ogonek diacritic (non-combining) (U+02DB): ˛ [Needs Unicode]
+    $!x::Send,  {U+2248} ; Almost Equal To symbol {U+2248}: ≈ (Alt+247)
+    $!+x::Send, {U+02DB} ; Ogonek diacritic (non-combining) {U+02DB}: ˛ [Needs Unicode]
     $!c::Send,  {U+00E7} ; Small Letter c with Cedilla {U+00E7}: ç (Alt+0231)
     $!+c::Send, {U+00C7} ; Capital Letter C with Cedilla {U+00C7}: Ç (Alt+0199)
-    $!v::Send,  {U+221A} ; Square Root radical sign (U+221A): √ (Alt+251)
-    $!+v::Send, {U+25CA} ; Lozenge (diamond) shape symbol (U+25CA): ◊ [Needs Unicode]
-    $!b::Send,  {U+222B} ; Integral mathematical symbol (U+222B): ∫ [Needs Unicode]
-    $!+b::Send, {U+0131} ; Latin Small Letter Dotless i (U+0131): ı [Needs Unicode]
+    $!v::Send,  {U+221A} ; Square Root radical sign {U+221A}: √ (Alt+251)
+    $!+v::Send, {U+25CA} ; Lozenge (diamond) shape symbol {U+25CA}: ◊ [Needs Unicode]
+    $!b::Send,  {U+222B} ; Integral mathematical symbol {U+222B}: ∫ [Needs Unicode]
+    $!+b::Send, {U+0131} ; Latin Small Letter Dotless i {U+0131}: ı [Needs Unicode]
 
     ; Dead_Keys_Accent_Tilde
     ; Tilde accent: Option+n, then key to accent
     $!n::
         ; Use Apple "dead keys" Option key method to attach accents to next character typed
         ; Tilde accent activated by Option+n (logical Alt+n)
+        Send, {U+02DC}{Shift down}{Left}{Shift up}
         StringCaseSense, On
         ; watch next input string
-        Input, UserInput, L1 
-        Switch UserInput {
-            Case Esc: Return            ; Watch for Escape key, cancel dead keys sequence
-            Case "a": Send, {U+00E3}            ; ã {U+00E3} (Alt+0227)
-            Case "n": Send, {U+00F1}            ; ñ {U+00F1} (Alt+0241)
-            Case "o": Send, {U+00F5}            ; õ {U+00F5} (Alt+0245)
-            Case "A": Send, {U+00C3}            ; Ã {U+00C3} (Alt+0195)
-            Case "N": Send, {U+00D1}            ; Ñ {U+00D1} (Alt+0209)
-            Case "O": Send, {U+00D5}            ; Õ {U+00D5} (Alt+0213)
-            Default: Send, %UserInput%          ; No match? Send input through.
+        Input, UserInput, L1, {BS}{Del}{Left}{Right}{Up}{Down}{LAlt}{RAlt}{LCtrl}{RCtrl}
+        ; MsgBox % GetKeyName(UserInput)              ; Debugging: Show normalized key name
+        ; MsgBox % ErrorLevel                         ; Debugging: Show ErrorLevel value
+        name := GetKeyName(UserInput)               ; Get normalized name of UserInput
+        e := SubStr(ErrorLevel, 8)                  ; Get normalized name of EndKey
+        Switch {
+            Default:                Send, {Right}%UserInput%    ; No match? Leave accent char and send input.
+            Case name = "Escape":   Send, {Right}               ; Escape: Leave accent character, exit dead key
+            Case name = "Space":    Send, {Right}               ; Space: Leave accent character, exit dead key
+            Case e = "Up":          Send, {Right}{Up}           ; Up: Leave accent character, exit dead key, move
+            Case e = "Down":        Send, {Right}{Down}         ; Down: Leave accent character, exit dead key, move
+            Case e = "Left":        Send, {Right}{Left}         ; Left: Leave accent character, exit dead key, move
+            Case e = "Right":       Send, {Right}{Right}        ; Right: Leave accent character, exit dead key, move
+            Case e = "Backspace":   Send, {Right}{BS}           ; Backspace: Delete accent character
+            Case UserInput == "n":  Send, {U+00F1}              ; ñ {U+00F1} (Alt+0241)
+            Case UserInput == "a":  Send, {U+00E3}              ; ã {U+00E3} (Alt+0227)
+            Case UserInput == "o":  Send, {U+00F5}              ; õ {U+00F5} (Alt+0245)
+            Case UserInput == "A":  Send, {U+00C3}              ; Ã {U+00C3} (Alt+0195)
+            Case UserInput == "N":  Send, {U+00D1}              ; Ñ {U+00D1} (Alt+0209)
+            Case UserInput == "O":  Send, {U+00D5}              ; Õ {U+00D5} (Alt+0213)
         }
         Return
 
-    $!+n::Send, {U+02DC} ; Small Tilde character (U+02DC): ˜ (Alt+0152)
+    $!+n::Send, {U+02DC} ; Small Tilde character {U+02DC}: ˜ (Alt+0152)
     $!m::Send,  {U+00B5} ; Micro (mu) symbol {U+00B5}: µ (Alt+0181)
-    $!+m::Send, {U+00C2} ; Latin Capital Letter a with Circumflex (U+00C2): Â (Alt+0194)
+    $!+m::Send, {U+00C2} ; Latin Capital Letter a with Circumflex {U+00C2}: Â (Alt+0194)
     $!,::Send,  {U+2264} ; Less than or equal to symbol {U+2264}: ≤ (Alt+243)
-    $!+,::Send, {U+00AF} ; Macron/overline/apl overbar (non-combining) (U+00AF): ¯ (Alt+0175)
+    $!+,::Send, {U+00AF} ; Macron/overline/apl overbar (non-combining) {U+00AF}: ¯ (Alt+0175)
     $!.::Send,  {U+2265} ; Greater than or equal to symbol {U+2265}: ≥ (Alt+242)
     $!+.::Send, {U+02D8} ; Breve diacritic (non-combining) {U+02D8}: ˘ [Needs Unicode]
     $!/::Send,  {U+00F7} ; Obelus/Division symbol {U+00F7}: ÷ (Alt+0247)
     $!+/::Send, {U+00BF} ; Inverted Question Mark {U+00BF}: ¿ (Alt+0191)
 
 #If ; ### END of special character insertion with Option(Alt) key
+
+; ##########################################################################################
+; ###   MAC NUMPAD FEATURE
+; ###   Make the numpad always act like a numpad, even when numlock is OFF
+; ###   Numlock becomes "Clear" key for use with calculator apps (sends Escape)
+; ###   
+; ###   To enable this feature by default: 
+; ###   Search for "ENABLE Mac Numpad feature" and set the variable to 1
+; ##########################################################################################
+
+; Shortcut to activate media arrow keys fix
+; ^+!n::Gosub, toggle_mac_numpad
+$!NumLock::Gosub, toggle_mac_numpad
+
+; Function (subroutine?) for activation by tray menu item or keyboard shortcut
+toggle_mac_numpad:
+    mac_numpad:=!mac_numpad         ; Toggle value of media_arrows_fix variable on/off
+    if (mac_numpad = 1) {
+        Menu, Tray, Check, Mac Numpad           Option+NumLock
+        MsgBox, 0, ALERT, % "Mac Numpad feature is now ENABLED.`n`n"
+                            . "Disable from tray menu or with Option+NumLock."
+        return
+    }
+    if (mac_numpad = 0) {
+        Menu, Tray, Uncheck, Mac Numpad           Option+NumLock
+        MsgBox, 0, ALERT, % "Mac Numpad feature is now DISABLED.`n`n"
+                            . "Re-enable from tray menu or with Option+NumLock."
+        return
+    }
+
+#If !WinActive("ahk_group remotes") && mac_numpad = 1
+    ; Make numpad act like a real Mac (always a numpad, Numlock is "Clear")
+    $NumLock::Send, {Esc}
+#If ; Technically unnecessary closing #If, but nullifies previous #If directive
+
+; ##########################################################################################
+; ###   MEDIA ARROWS FIX
+; ###   Fix to make laptops with media functions on arrow keys act like Apple laptops
+; ###   To set this to ENABLED by default, search for "Enable Media Arrows Fix by default"
+; ##########################################################################################
+
+; Shortcut to activate media arrow keys fix
+^+!m::Gosub, toggle_media_arrows_fix
+
+; Function for activation of media arrows fix by tray menu item or keyboard shortcut
+toggle_media_arrows_fix:
+    media_arrows_fix:=!media_arrows_fix         ; Toggle value of optspecialchars variable on/off
+    if (media_arrows_fix = 1) {
+        Menu, Tray, Check, Media Arrows Fix   Shift+Opt+Cmd+M
+        MsgBox, 0, ALERT, % "Media Arrows Fix is now ENABLED.`n`n"
+                            . "When used with the Fn key, arrow keys with `n"
+                            . "media functions will now behave as if they are`n"
+                            . "PgUp/PgDn/Home/End navigation keys.`n`n"
+                            . "To ENABLE by default, search in kinto.ahk for`n"
+                            . "   'Enable Media Arrows Fix by default'`n`n"
+                            . "Disable from tray menu or with Shift+Opt+Cmd+M."
+        return
+    }
+    if (media_arrows_fix = 0) {
+        Menu, Tray, Uncheck, Media Arrows Fix   Shift+Opt+Cmd+M
+        MsgBox, 0, ALERT, Media arrow keys fix is now DISABLED.
+        return
+    }
+
+#If !WinActive("ahk_group remotes") && media_arrows_fix = 1
+    ; Fix for media functions on laptop arrow keys
+    $Media_Play_Pause::PgUp
+    $Media_Stop::PgDn
+    $Media_Prev::Home
+    $Media_Next::End
+#If
